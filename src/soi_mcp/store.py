@@ -8,17 +8,18 @@ year drops yearly, ~2–3 years behind; older years stay available for compariso
 
 Each stored row is a (state, ZIP, AGI bracket) cell — all six brackets per ZIP
 are kept so the distribution survives. Reads are synchronous (local SQLite); only
-the one-time *load* touches the network, via the async ``SoiClient``.
+the one-time *load* touches the network, via the async ``SoiClient``. The store
+plumbing (connection, ``meta`` table, load-state) lives in
+``mcpwright_core.BaseStore``; this adds the SOI schema and queries.
 """
 
 from __future__ import annotations
 
-import os
-import sqlite3
-import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from mcpwright_core import BaseStore
 
 from .fields import DATA_COLUMNS, OTHER_ZIP, STATE_TOTAL_ZIP, parse_csv
 
@@ -27,78 +28,22 @@ if TYPE_CHECKING:
 
     from .soi_client import SoiClient
 
-_APP_DIR = "mcpwright-soi"
-_DB_NAME = "soi.sqlite3"
-
 # Dimension columns stored alongside the data columns.
 _DIM_COLUMNS = ["statefips", "state", "zipcode", "agi_stub"]
 _ALL_COLUMNS = _DIM_COLUMNS + DATA_COLUMNS
 
 
-def _cache_dir() -> Path:
-    """The per-user cache directory for this platform."""
-    # Bind to a local so mypy doesn't prune the other branches as unreachable
-    # (it narrows direct `sys.platform` comparisons to the checking platform).
-    platform = sys.platform
-    if platform == "darwin":
-        return Path.home() / "Library" / "Caches"
-    if platform.startswith("win"):
-        base = os.environ.get("LOCALAPPDATA")
-        return Path(base) if base else Path.home() / "AppData" / "Local"
-    return Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
-
-
-def default_store_path() -> Path:
-    """Where the SQLite store lives (override with ``SOI_MCP_STORE``)."""
-    override = os.environ.get("SOI_MCP_STORE")
-    if override:
-        return Path(override)
-    return _cache_dir() / _APP_DIR / _DB_NAME
-
-
-class Store:
+class Store(BaseStore):
     """A SQLite-backed local store of SOI data, keyed by (state, ZIP, bracket)."""
 
-    def __init__(self, path: Path | None = None) -> None:
-        self.path = path or default_store_path()
-        self._conn: sqlite3.Connection | None = None
-
-    # --- connection lifecycle ----------------------------------------------
-    def connect(self) -> sqlite3.Connection:
-        if self._conn is None:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(self.path)
-            conn.row_factory = sqlite3.Row
-            self._conn = conn
-        return self._conn
-
-    def close(self) -> None:
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
-
-    # --- state -------------------------------------------------------------
-    def is_loaded(self) -> bool:
-        """True once the soi table exists and holds at least one row."""
-        conn = self.connect()
-        if not self._table_exists("soi"):
-            return False
-        count = conn.execute("SELECT COUNT(*) FROM soi").fetchone()[0]
-        return bool(count)
+    APP_DIR = "mcpwright-soi"
+    DB_NAME = "soi.sqlite3"
+    STORE_ENV_VAR = "SOI_MCP_STORE"
+    DATA_TABLE = "soi"
 
     def tax_year(self) -> int | None:
         """The SOI tax year currently loaded, if any."""
-        v = self._meta("tax_year")
-        return int(v) if v is not None else None
-
-    def metadata(self) -> dict[str, str]:
-        conn = self.connect()
-        if not self._table_exists("meta"):
-            return {}
-        return {
-            str(r["key"]): str(r["value"])
-            for r in conn.execute("SELECT key, value FROM meta")
-        }
+        return self._int_meta("tax_year")
 
     # --- reads -------------------------------------------------------------
     def zip_stubs(self, zipcode: str) -> list[dict[str, object]]:
@@ -170,50 +115,23 @@ class Store:
                 "SELECT COUNT(DISTINCT zipcode) FROM soi WHERE zipcode NOT IN (?, ?)",
                 (STATE_TOTAL_ZIP, OTHER_ZIP),
             ).fetchone()[0]
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)"
+            self._write_meta(
+                conn,
+                {
+                    "tax_year": tax_year,
+                    "row_count": row_count,
+                    "zip_count": zip_count,
+                },
             )
-            for key, value in (
-                ("tax_year", str(tax_year)),
-                ("row_count", str(row_count)),
-                ("zip_count", str(zip_count)),
-            ):
-                conn.execute(
-                    "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)",
-                    (key, value),
-                )
         return int(row_count), int(zip_count)
 
     # --- internals ---------------------------------------------------------
-    @staticmethod
-    def _row_dict(row: sqlite3.Row) -> dict[str, object]:
-        # sqlite3.Row iterates VALUES, not column names — .keys() is required.
-        return {key: row[key] for key in row.keys()}  # noqa: SIM118
-
     @staticmethod
     def _tuples(
         records: Iterable[dict[str, object]],
     ) -> Iterator[tuple[object, ...]]:
         for rec in records:
             yield tuple(rec.get(c) for c in _ALL_COLUMNS)
-
-    def _table_exists(self, name: str) -> bool:
-        conn = self.connect()
-        return (
-            conn.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
-            ).fetchone()
-            is not None
-        )
-
-    def _meta(self, key: str) -> str | None:
-        conn = self.connect()
-        if not self._table_exists("meta"):
-            return None
-        row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
-        if row is None:
-            return None
-        return str(row["value"])
 
 
 async def load_store(
