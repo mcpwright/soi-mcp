@@ -1,0 +1,45 @@
+{
+  "manifest_version": "0.4",
+  "name": "soi",
+  "display_name": "IRS SOI (income by ZIP)",
+  "version": "0.1.0",
+  "description": "IRS income & tax stats by ZIP: AGI distribution, tax, credits, deductions.",
+  "long_description": "An MCP server that puts IRS Statistics of Income (SOI) data by ZIP code inside your agent. Pull the real income distribution across the six IRS AGI brackets, total and average AGI, income tax and total tax liability, refundable credits (EITC, additional child tax credit), and standard vs. itemized deductions — for any U.S. ZIP. SOI is aggregated from actual filed returns (not a survey estimate), so it reports income, tax, and credits the Census ACS can't. Read-only and built on public-domain IRS data — no API key. The dataset is bulk-downloaded once into a local store on first use, then served instantly offline. The ZIP release lags ~2–3 years; the latest available year loads by default.",
+  "author": {
+    "name": "Devender Gollapally",
+    "url": "https://github.com/devender"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcpwright/soi-mcp"
+  },
+  "homepage": "https://mcpwright.com/soi",
+  "documentation": "https://mcpwright.com/soi",
+  "icon": "icon.png",
+  "license": "MIT",
+  "privacy_policies": ["https://mcpwright.com/privacy/"],
+  "server": {
+    "type": "uv",
+    "entry_point": "src/soi_mcp/server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "mcpwright-soi"]
+    }
+  },
+  "tools": [
+    { "name": "lookup_zip", "description": "Confirm a ZIP has SOI data; returns state, returns, individuals, and the tax year." },
+    { "name": "get_income", "description": "Total AGI, average AGI per return, and the main income components." },
+    { "name": "get_agi_distribution", "description": "The six IRS AGI brackets for a ZIP — returns and AGI per bracket, plus each share." },
+    { "name": "get_tax", "description": "Income tax, total tax liability, total payments, and average total tax per return." },
+    { "name": "get_credits", "description": "Refundable credits: the EITC (split by qualifying children) and additional child tax credit." },
+    { "name": "get_deductions", "description": "Standard vs. itemized deductions, the SALT deduction, and the % itemizing." },
+    { "name": "get_filing_status", "description": "Single / married-joint / head-of-household mix, elderly returns, and e-file share." },
+    { "name": "compare_zips", "description": "Rank several ZIPs by a single metric, highest first." },
+    { "name": "get_state_totals", "description": "State-level totals and AGI distribution from the IRS state-rollup row." },
+    { "name": "get_soi_field", "description": "Escape hatch: the raw value of any SOI field for a ZIP, by code or friendly name." }
+  ],
+  "tools_generated": false,
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"]
+  }
+}
