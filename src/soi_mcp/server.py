@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from mcp.server.fastmcp import Context, FastMCP
-from mcp.types import ToolAnnotations
+from mcpwright_core import READ_ONLY, app_context, ensure_loaded, run_cli
 
 from .fields import OTHER_ZIP, STATE_TOTAL_ZIP, resolve_field
 from .formatting import (
@@ -111,13 +111,10 @@ async def _lifespan(_server: FastMCP) -> AsyncIterator[AppContext]:
 
 mcp = FastMCP("soi", instructions=_INSTRUCTIONS, lifespan=_lifespan)
 
-# Tools read a local store; the one-time load reaches the IRS file host.
-_READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=True)
-
 
 def _app(ctx: Context) -> AppContext:
     """The shared app resources from the lifespan context."""
-    return cast(AppContext, ctx.request_context.lifespan_context)
+    return app_context(ctx, AppContext)
 
 
 def _normalize_zip(zip_code: str) -> str:
@@ -145,12 +142,12 @@ async def _ensure_loaded(app: AppContext) -> int:
     Lazily downloads the latest SOI ZIP file on first use if the store is empty.
     Serialized so concurrent first calls don't each kick off a download.
     """
-    if app.store.is_loaded():
-        return cast(int, app.store.tax_year())
-    async with app.load_lock:
-        if not app.store.is_loaded():  # re-check inside the lock
-            await load_store(app.store, app.client)
-    return cast(int, app.store.tax_year())
+    return await ensure_loaded(
+        app.load_lock,
+        is_loaded=app.store.is_loaded,
+        load=lambda: load_store(app.store, app.client),
+        version=lambda: cast(int, app.store.tax_year()),
+    )
 
 
 async def _zip_rows(
@@ -168,7 +165,7 @@ async def _zip_rows(
     return zipcode, rows, tax_year
 
 
-@mcp.tool(title="Look up a ZIP", annotations=_READ_ONLY)
+@mcp.tool(title="Look up a ZIP", annotations=READ_ONLY)
 async def lookup_zip(zip_code: str, ctx: Context) -> ZipInfo:
     """Confirm a ZIP has SOI data and return its return and individual counts.
 
@@ -180,7 +177,7 @@ async def lookup_zip(zip_code: str, ctx: Context) -> ZipInfo:
     return to_zip_info(zipcode, rows, tax_year)
 
 
-@mcp.tool(title="Get income by ZIP", annotations=_READ_ONLY)
+@mcp.tool(title="Get income by ZIP", annotations=READ_ONLY)
 async def get_income(zip_code: str, ctx: Context) -> Income:
     """Income measures for a ZIP: AGI, average AGI per return, and components.
 
@@ -193,7 +190,7 @@ async def get_income(zip_code: str, ctx: Context) -> Income:
     return to_income(zipcode, rows, tax_year)
 
 
-@mcp.tool(title="Get AGI distribution by ZIP", annotations=_READ_ONLY)
+@mcp.tool(title="Get AGI distribution by ZIP", annotations=READ_ONLY)
 async def get_agi_distribution(zip_code: str, ctx: Context) -> AgiDistribution:
     """The income distribution of a ZIP across the six IRS AGI brackets.
 
@@ -206,7 +203,7 @@ async def get_agi_distribution(zip_code: str, ctx: Context) -> AgiDistribution:
     return to_agi_distribution(zipcode, rows, tax_year)
 
 
-@mcp.tool(title="Get tax by ZIP", annotations=_READ_ONLY)
+@mcp.tool(title="Get tax by ZIP", annotations=READ_ONLY)
 async def get_tax(zip_code: str, ctx: Context) -> Tax:
     """Tax measures for a ZIP: income tax, total liability, and average per return.
 
@@ -218,7 +215,7 @@ async def get_tax(zip_code: str, ctx: Context) -> Tax:
     return to_tax(zipcode, rows, tax_year)
 
 
-@mcp.tool(title="Get credits by ZIP", annotations=_READ_ONLY)
+@mcp.tool(title="Get credits by ZIP", annotations=READ_ONLY)
 async def get_credits(zip_code: str, ctx: Context) -> Credits:
     """Refundable-credit take-up for a ZIP: the EITC and additional child tax credit.
 
@@ -231,7 +228,7 @@ async def get_credits(zip_code: str, ctx: Context) -> Credits:
     return to_credits(zipcode, rows, tax_year)
 
 
-@mcp.tool(title="Get deductions by ZIP", annotations=_READ_ONLY)
+@mcp.tool(title="Get deductions by ZIP", annotations=READ_ONLY)
 async def get_deductions(zip_code: str, ctx: Context) -> Deductions:
     """Deduction measures for a ZIP: standard vs. itemized, plus SALT.
 
@@ -243,7 +240,7 @@ async def get_deductions(zip_code: str, ctx: Context) -> Deductions:
     return to_deductions(zipcode, rows, tax_year)
 
 
-@mcp.tool(title="Get filing status by ZIP", annotations=_READ_ONLY)
+@mcp.tool(title="Get filing status by ZIP", annotations=READ_ONLY)
 async def get_filing_status(zip_code: str, ctx: Context) -> FilingStatus:
     """Filing-status mix for a ZIP: single / married-joint / head-of-household.
 
@@ -255,7 +252,7 @@ async def get_filing_status(zip_code: str, ctx: Context) -> FilingStatus:
     return to_filing_status(zipcode, rows, tax_year)
 
 
-@mcp.tool(title="Compare ZIPs", annotations=_READ_ONLY)
+@mcp.tool(title="Compare ZIPs", annotations=READ_ONLY)
 async def compare_zips(zips: list[str], metric: str, ctx: Context) -> Comparison:
     """Rank several ZIPs by a single metric, highest value first.
 
@@ -281,7 +278,7 @@ async def compare_zips(zips: list[str], metric: str, ctx: Context) -> Comparison
     return to_comparison(rows_by_zip, metric, tax_year)
 
 
-@mcp.tool(title="Get state totals", annotations=_READ_ONLY)
+@mcp.tool(title="Get state totals", annotations=READ_ONLY)
 async def get_state_totals(state: str, ctx: Context) -> StateTotals:
     """State-level SOI totals and AGI distribution from the IRS state rollup.
 
@@ -299,7 +296,7 @@ async def get_state_totals(state: str, ctx: Context) -> StateTotals:
     return to_state_totals(code, rows, tax_year)
 
 
-@mcp.tool(title="Get a raw SOI field", annotations=_READ_ONLY)
+@mcp.tool(title="Get a raw SOI field", annotations=READ_ONLY)
 async def get_soi_field(zip_code: str, field: str, ctx: Context) -> SoiFieldValue:
     """Raw value of a single SOI field for a ZIP — an escape hatch.
 
@@ -353,18 +350,4 @@ def main() -> None:
     Code). `mcpwright-soi setup` downloads the latest SOI ZIP year; `mcpwright-soi
     refresh [year]` re-pulls (an optional 4-digit year loads that specific year).
     """
-    if len(sys.argv) > 1 and sys.argv[1] in {"setup", "refresh"}:
-        year: int | None = None
-        if len(sys.argv) > 2:
-            try:
-                year = int(sys.argv[2])
-            except ValueError:
-                print(f"Not a valid year: {sys.argv[2]!r}", file=sys.stderr)
-                sys.exit(1)
-        try:
-            asyncio.run(_run_load(year))
-        except SoiError as exc:
-            print(str(exc), file=sys.stderr)
-            sys.exit(1)
-        return
-    mcp.run()
+    run_cli(mcp, loader=_run_load, error=SoiError, accepts_year=True)
