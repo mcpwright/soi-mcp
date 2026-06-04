@@ -2,7 +2,7 @@
   "manifest_version": "0.4",
   "name": "soi",
   "display_name": "IRS SOI (income by ZIP)",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "IRS income & tax stats by ZIP: AGI distribution, tax, credits, deductions.",
   "long_description": "An MCP server that puts IRS Statistics of Income (SOI) data by ZIP code inside your agent. Pull the real income distribution across the six IRS AGI brackets, total and average AGI, income tax and total tax liability, refundable credits (EITC, additional child tax credit), and standard vs. itemized deductions — for any U.S. ZIP. SOI is aggregated from actual filed returns (not a survey estimate), so it reports income, tax, and credits the Census ACS can't. Read-only and built on public-domain IRS data — no API key. The dataset is bulk-downloaded once into a local store on first use, then served instantly offline. The ZIP release lags ~2–3 years; the latest available year loads by default.",
   "author": {
