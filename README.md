@@ -10,7 +10,8 @@ straight from the IRS Statistics of Income (SOI) — built on Anthropic's offici
 All tools are **read-only** and the data is **public domain** (a U.S. government work) — **no API
 key required**. The dataset is downloaded once into a local SQLite store and served offline.
 
-> Status: 10 tools, working today (see below). The IRS SOI ZIP release lags ~2–3 years; the
+> Status: **published** — `uvx mcpwright-soi` (PyPI) and listed in the official MCP Registry as
+> `io.github.mcpwright/soi-mcp`. 10 tools, working today (see below). The IRS SOI ZIP release lags ~2–3 years; the
 > latest available year (currently **Tax Year 2022**) loads by default, and older years are one
 > `refresh <year>` away. See the roadmap for what's next.
 
@@ -135,7 +136,7 @@ uv run mcp dev src/soi_mcp/server.py                   # poke the tools in the M
 - [x] `get_state_totals` — state rollups from the IRS 00000 row
 - [x] `get_soi_field` — raw-field escape hatch
 - [x] `setup` / `refresh [year]` — download once, re-pull or pick an older tax year
-- [ ] Publish to PyPI (`mcpwright-soi`) + the official MCP Registry (`io.github.mcpwright/soi-mcp`)
+- [x] Publish to PyPI (`mcpwright-soi`) + the official MCP Registry (`io.github.mcpwright/soi-mcp`)
 - [ ] Multi-year queries in one call (trend a ZIP across tax years)
 
 ## Privacy
