@@ -3,7 +3,7 @@
   "name": "io.github.mcpwright/soi-mcp",
   "title": "IRS SOI (income by ZIP)",
   "description": "IRS income & tax stats by ZIP in your agent: AGI distribution, tax, credits, deductions.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "repository": {
     "url": "https://github.com/mcpwright/soi-mcp",
     "source": "github"
@@ -12,7 +12,7 @@
     {
       "registryType": "pypi",
       "identifier": "mcpwright-soi",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "transport": {
         "type": "stdio"
       },
