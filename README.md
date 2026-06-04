@@ -1,0 +1,160 @@
+# soi-mcp
+
+<!-- mcp-name: io.github.mcpwright/soi-mcp -->
+
+**IRS income & tax statistics by ZIP code, inside your agent.** An [MCP](https://modelcontextprotocol.io)
+server that lets an LLM pull the income distribution, tax, credits, and deductions of any U.S. ZIP
+straight from the IRS Statistics of Income (SOI) — built on Anthropic's official
+[`mcp` Python SDK](https://github.com/modelcontextprotocol/python-sdk).
+
+All tools are **read-only** and the data is **public domain** (a U.S. government work) — **no API
+key required**. The dataset is downloaded once into a local SQLite store and served offline.
+
+> Status: 10 tools, working today (see below). The IRS SOI ZIP release lags ~2–3 years; the
+> latest available year (currently **Tax Year 2022**) loads by default, and older years are one
+> `refresh <year>` away. See the roadmap for what's next.
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `lookup_zip(zip_code)` | Confirm a ZIP has SOI data → state, number of returns, number of individuals, tax year. A good first call. |
+| `get_income(zip_code)` | Adjusted gross income (AGI), average AGI per return, and income components: salaries/wages, taxable interest, ordinary dividends, business net income, net capital gain. |
+| `get_agi_distribution(zip_code)` | **The distinctive one.** The ZIP's returns and AGI split across the six IRS AGI brackets (<$25k, $25–50k, $50–75k, $75–100k, $100–200k, $200k+), with each bracket's share — the income *shape* of a ZIP, not just an average. |
+| `get_tax(zip_code)` | Income tax, income tax before credits, total tax liability (broader — includes self-employment tax, etc.), total tax payments, and average total tax per return. |
+| `get_credits(zip_code)` | EITC take-up (overall and split by number of qualifying children: none / one / two / three or more) and the additional (refundable) child tax credit. |
+| `get_deductions(zip_code)` | Standard vs. itemized deductions (count and amount), the taxes-paid (SALT) deduction, and the percent of returns that itemized. |
+| `get_filing_status(zip_code)` | Single / married-filing-jointly / head-of-household return counts, elderly returns (age 65+), and the count and share of electronically filed returns. |
+| `compare_zips(zips, metric)` | Rank several ZIPs by one metric (e.g. `avg_agi_per_return`, `pct_returns_200k_plus`, `total_tax_liability`, `eitc_amount`), highest first. |
+| `get_state_totals(state)` | A whole state's totals and AGI-bracket mix (returns, individuals, AGI, average AGI per return, income tax, total tax liability), from the IRS state rollup. Accepts `"CA"` or `"California"`. |
+| `get_soi_field(zip_code, field)` | Escape hatch: the raw value of one SOI field code (e.g. `A00100` for AGI, `N1` for returns) for a ZIP, summed across brackets, with its label and unit. Limited to the fields in the store. |
+
+All dollar amounts are returned in **whole USD** (the source reports thousands). Counts are
+numbers of returns, rounded by the IRS to the nearest 10.
+
+## Install
+
+Requires Python 3.12+. The zero-clone way to run it (the PyPI package is `mcpwright-soi`; the
+command, server, and tools are all "soi"):
+
+```bash
+uvx mcpwright-soi
+```
+
+The first tool call downloads the latest SOI ZIP file (~200 MB) into a local SQLite store under
+your OS cache directory and serves everything offline thereafter. To pre-load (or to pick a
+specific tax year) without waiting for the first query:
+
+```bash
+uvx mcpwright-soi setup            # download the latest available year
+uvx mcpwright-soi refresh 2021     # re-pull a specific older year for comparison
+```
+
+### Claude Code
+
+```bash
+claude mcp add soi -- uvx mcpwright-soi
+```
+
+### Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "soi": { "command": "uvx", "args": ["mcpwright-soi"] }
+  }
+}
+```
+
+### OpenAI Agents SDK (Python)
+
+It's a standard MCP server, so it works with any MCP-capable client — not just Claude.
+With the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/mcp/):
+
+```python
+from agents import Agent, Runner
+from agents.mcp import MCPServerStdio
+
+async def main():
+    async with MCPServerStdio(
+        name="soi",
+        params={"command": "uvx", "args": ["mcpwright-soi"]},
+    ) as soi:
+        agent = Agent(
+            name="Analyst",
+            instructions="Use the SOI tools for IRS income and tax data by ZIP.",
+            mcp_servers=[soi],
+        )
+        result = await Runner.run(
+            agent, "What's the income distribution of ZIP 90210 vs 10001?"
+        )
+        print(result.final_output)
+```
+
+### Any other MCP client (Cursor, VS Code, Cline, Goose, Zed, …)
+
+They all launch a stdio MCP server the same way — point yours at:
+
+```json
+{
+  "mcpServers": {
+    "soi": { "command": "uvx", "args": ["mcpwright-soi"] }
+  }
+}
+```
+
+> Hosted chat connectors (e.g. ChatGPT connectors) expect a **remote** MCP server over
+> Streamable HTTP; `mcpwright-soi` runs locally over stdio.
+
+> **Storage:** the dataset lives in a SQLite file under your OS cache dir (override with the
+> `SOI_MCP_STORE` env var). Delete it any time; `setup` / `refresh` rebuilds it.
+
+> **A note on suppression:** the IRS excludes ZIPs with fewer than 100 returns (folding them into
+> a "99999" bucket) and suppresses line items with fewer than 20 returns. Summed ZIP totals can
+> therefore slightly understate reality and won't exactly equal the state total. All figures are
+> aggregates of filed returns, not a population census.
+
+## Develop
+
+```bash
+git clone https://github.com/mcpwright/soi-mcp && cd soi-mcp
+uv sync
+uv run pytest                                          # tests (mocked download + seeded SQLite)
+uv run ruff check src/ && uv run ruff format --check src/   # lint + format
+uv run mypy                                            # strict type checking
+uv run mcp dev src/soi_mcp/server.py                   # poke the tools in the MCP Inspector
+```
+
+## Roadmap
+
+- [x] `lookup_zip` / `get_income` / `get_agi_distribution` — the income backbone
+- [x] `get_tax` / `get_credits` / `get_deductions` / `get_filing_status` — the tax side
+- [x] `compare_zips` — rank ZIPs by a metric
+- [x] `get_state_totals` — state rollups from the IRS 00000 row
+- [x] `get_soi_field` — raw-field escape hatch
+- [x] `setup` / `refresh [year]` — download once, re-pull or pick an older tax year
+- [ ] Publish to PyPI (`mcpwright-soi`) + the official MCP Registry (`io.github.mcpwright/soi-mcp`)
+- [ ] Multi-year queries in one call (trend a ZIP across tax years)
+
+## Privacy
+
+soi-mcp runs entirely **on your machine**. It collects, stores, or transmits **no personal data**
+— no accounts, no tracking, no telemetry. Its only outbound requests go to the **U.S. IRS** static
+file host (`www.irs.gov/pub/irs-soi`) to download the public SOI ZIP-code CSV; no API key is
+needed and nothing about your queries leaves your machine. The downloaded dataset is cached **on
+disk** as a local SQLite file (under your OS cache dir, or `SOI_MCP_STORE`); delete it any time.
+
+Full policy: **https://mcpwright.com/privacy/**
+
+## Questions & feedback
+
+- **Questions, ideas, or "could it do X?"** → [**Discussions**](https://github.com/mcpwright/soi-mcp/discussions)
+- **Bugs & concrete feature requests** → [**Issues**](https://github.com/mcpwright/soi-mcp/issues)
+
+Contributions welcome — and if you build something with it, I'd love to hear about it.
+
+---
+
+Part of [**mcpwright**](https://github.com/mcpwright) · built by [Devender Gollapally](https://github.com/devender)
