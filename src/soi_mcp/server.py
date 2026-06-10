@@ -81,8 +81,9 @@ Notes:
   latest available year is loaded by default. Use `refresh <year>` for an older
   year (the data goes back many years at stable URLs).
 - Small/suppressed cells: ZIPs with <100 returns and nonresidential ZIPs are
-  excluded by the IRS, and items with <20 returns are suppressed. A summed total
-  can therefore slightly understate reality and won't equal the state total.
+  excluded by the IRS, and items with <20 returns are suppressed — a 0 can be a
+  suppressed cell rather than a true zero. A summed total can therefore slightly
+  understate reality and won't equal the state total.
 - The first call downloads the dataset into a local store (no API key); every
   call after that is local and offline.
 """
@@ -185,6 +186,10 @@ async def get_income(zip_code: str, ctx: Context) -> Income:
     average AGI per return, and the main income components — salaries and wages,
     taxable interest, ordinary dividends, business net income, and net capital
     gain. All dollar amounts in USD.
+
+    Note: figures cover filed tax returns only. Average AGI is a *mean per
+    return*, not a median per household, and AGI omits most nontaxable income —
+    so it is not directly comparable to Census median household income.
     """
     zipcode, rows, tax_year = await _zip_rows(_app(ctx), zip_code)
     return to_income(zipcode, rows, tax_year)
@@ -198,6 +203,10 @@ async def get_agi_distribution(zip_code: str, ctx: Context) -> AgiDistribution:
     $50-75k, $75-100k, $100-200k, $200k+), the number of returns and total AGI
     plus each bracket's share of the ZIP's returns and AGI. This is the income
     *shape* of a ZIP — what a single median can't show.
+
+    Note: a bracket showing 0 may be IRS-suppressed (<20 returns in that cell)
+    rather than truly empty, so the other brackets' shares can be slightly
+    overstated.
     """
     zipcode, rows, tax_year = await _zip_rows(_app(ctx), zip_code)
     return to_agi_distribution(zipcode, rows, tax_year)
@@ -223,6 +232,9 @@ async def get_credits(zip_code: str, ctx: Context) -> Credits:
     for the Earned Income Tax Credit (overall and split by number of qualifying
     children: none / one / two / three or more), plus the additional (refundable)
     child tax credit. Amounts in USD.
+
+    Note: a 0 may be IRS-suppressed (<20 returns in each AGI-bracket cell)
+    rather than a true zero — it does not prove no one claims the credit.
     """
     zipcode, rows, tax_year = await _zip_rows(_app(ctx), zip_code)
     return to_credits(zipcode, rows, tax_year)
@@ -235,6 +247,9 @@ async def get_deductions(zip_code: str, ctx: Context) -> Deductions:
     `zip_code`: a 5-digit US ZIP. Returns the count and amount of standard
     deductions and itemized deductions, the taxes-paid (SALT) deduction, and the
     percent of returns that itemized. Amounts in USD.
+
+    Note: a 0 may be IRS-suppressed (<20 returns in each AGI-bracket cell)
+    rather than a true zero — it does not prove no one in the ZIP itemizes.
     """
     zipcode, rows, tax_year = await _zip_rows(_app(ctx), zip_code)
     return to_deductions(zipcode, rows, tax_year)
@@ -247,6 +262,9 @@ async def get_filing_status(zip_code: str, ctx: Context) -> FilingStatus:
     `zip_code`: a 5-digit US ZIP. Returns the number of single, married-filing-
     jointly, and head-of-household returns, the number of elderly returns (age
     65+), and the count and share of electronically filed returns.
+
+    Note: a 0 count may be IRS-suppressed (<20 returns in each AGI-bracket
+    cell) rather than truly absent.
     """
     zipcode, rows, tax_year = await _zip_rows(_app(ctx), zip_code)
     return to_filing_status(zipcode, rows, tax_year)
@@ -260,7 +278,9 @@ async def compare_zips(zips: list[str], metric: str, ctx: Context) -> Comparison
     `total_returns`, `adjusted_gross_income`, `avg_agi_per_return`,
     `pct_returns_200k_plus`, `total_income`, `salaries_and_wages`, `income_tax`,
     `total_tax_liability`, `avg_total_tax_per_return`, `eitc_amount`. Returns each
-    ZIP's value, sorted descending; ZIPs with no SOI data are listed last.
+    ZIP's value, sorted descending; ZIPs with no SOI data are listed last. A 0
+    for a sparse metric (e.g. `eitc_amount`) may be IRS-suppressed, not a true
+    zero.
     """
     if not zips:
         raise ValueError("Pass at least one ZIP to compare.")
@@ -305,6 +325,9 @@ async def get_soi_field(zip_code: str, field: str, ctx: Context) -> SoiFieldValu
     across the ZIP's AGI brackets, with its label and unit (USD for amount fields,
     count for return counts). Limited to the fields held in the local store (the
     same ones the other tools draw on); an unknown field errors with the list.
+
+    Note: a 0 may be IRS-suppressed (<20 returns in a cell) rather than a true
+    zero, and a sum over suppressed cells slightly understates the real total.
     """
     code = resolve_field(field)
     zipcode, rows, tax_year = await _zip_rows(_app(ctx), zip_code)
