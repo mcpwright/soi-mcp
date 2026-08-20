@@ -557,7 +557,7 @@ wheels = [
 
 [[package]]
 name = "mcpwright-soi"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },
@@ -580,7 +580,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.27.2" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.27.2,<2" },
     { name = "mcpwright-core", specifier = ">=0.1.2,<0.2" },
     { name = "pydantic", specifier = ">=2.13.4" },
 ]

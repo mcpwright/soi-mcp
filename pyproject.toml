@@ -1,6 +1,6 @@
 [project]
 name = "mcpwright-soi"
-version = "0.1.1"
+version = "0.1.2"
 description = "MCP server for IRS Statistics of Income (SOI) data by ZIP code — income, AGI distribution, tax, credits, and deductions from filed returns."
 readme = "README.md"
 license = "MIT"
@@ -23,7 +23,9 @@ classifiers = [
 ]
 dependencies = [
     "httpx>=0.28.1",
-    "mcp[cli]>=1.27.2",
+    # Upper bound: mcp 2.0 removed `mcp.server.fastmcp`, which server.py imports.
+    # Without this bound a fresh `uvx` resolve pulls 2.x and fails to start.
+    "mcp[cli]>=1.27.2,<2",
     "mcpwright-core>=0.1.2,<0.2",
     "pydantic>=2.13.4",
 ]
